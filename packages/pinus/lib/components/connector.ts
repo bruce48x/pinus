@@ -1,27 +1,30 @@
-import { getLogger } from 'pinus-logger';
+import {getLogger} from 'pinus-logger';
 import * as taskManager from '../common/manager/taskManager';
-import { pinus } from '../pinus';
+import {pinus} from '../pinus';
+
 let rsa = require('node-bignumber');
-import { default as events } from '../util/events';
+import {default as events} from '../util/events';
 import * as utils from '../util/utils';
-import { Application } from '../application';
-import { ConnectionComponent } from './connection';
-import { IComponent } from '../interfaces/IComponent';
-import { PushSchedulerComponent } from './pushScheduler';
-import { SIOConnector, SIOConnectorOptions } from '../connectors/sioconnector';
-import { ConnectionService } from '../common/service/connectionService';
-import { Server } from '../server/server';
-import { ServerComponent } from './server';
-import { UID, SID } from '../util/constants';
-import { ScheduleOptions } from '../interfaces/IPushScheduler';
-import { SessionComponent } from './session';
-import { IConnector, IEncoder, IDecoder } from '../interfaces/IConnector';
-import { ISocket } from '../interfaces/ISocket';
-import { Session } from '../common/service/sessionService';
+import {Application} from '../application';
+import {ConnectionComponent} from './connection';
+import {IComponent} from '../interfaces/IComponent';
+import {PushSchedulerComponent} from './pushScheduler';
+import {SIOConnector, SIOConnectorOptions} from '../connectors/sioconnector';
+import {ConnectionService} from '../common/service/connectionService';
+import {Server} from '../server/server';
+import {ServerComponent} from './server';
+import {UID, SID} from '../util/constants';
+import {ScheduleOptions} from '../interfaces/IPushScheduler';
+import {SessionComponent} from './session';
+import {IConnector, IEncoder, IDecoder} from '../interfaces/IConnector';
+import {ISocket} from '../interfaces/ISocket';
+import {Session} from '../common/service/sessionService';
 import * as path from 'path';
+
 let logger = getLogger('pinus', path.basename(__filename));
 
 export type BlackListFunction = (process: (err: Error, list: string[]) => void) => void;
+
 export interface ConnectorComponentOptions {
     encode?: IEncoder;
     decode?: IDecoder;
@@ -31,6 +34,7 @@ export interface ConnectorComponentOptions {
     blacklistFun?: BlackListFunction;
     useDict?: boolean;
     useProtobuf?: boolean;
+    forwardMsg?: boolean; // if forwardMsg === false, connector will only accept request to local handler.
 }
 
 
@@ -57,8 +61,9 @@ export class ConnectorComponent implements IComponent {
     useAsyncCoder: boolean;
     blacklistFun: BlackListFunction;
     connection: ConnectionService;
+    forwardMsg?: boolean;
 
-    keys: {[id: number]: RsaKey} = {};
+    keys: { [id: number]: RsaKey } = {};
     blacklist: string[] = [];
     server: ServerComponent;
     session: SessionComponent;
@@ -73,6 +78,7 @@ export class ConnectorComponent implements IComponent {
         this.useHostFilter = opts.useHostFilter;
         this.useAsyncCoder = opts.useAsyncCoder;
         this.blacklistFun = opts.blacklistFun;
+        this.forwardMsg = opts.forwardMsg;
 
         if (opts.useDict) {
             app.load(pinus.components.dictionary, app.get('dictionaryConfig'));
@@ -86,6 +92,7 @@ export class ConnectorComponent implements IComponent {
         this.server = null;
         this.session = null;
     }
+
     name = '__connector__';
 
     start(cb: () => void) {
@@ -128,9 +135,9 @@ export class ConnectorComponent implements IComponent {
 
     send(reqId: number, route: string, msg: any, recvs: SID[], opts: ScheduleOptions, cb: (err?: Error, resp ?: any) => void) {
         logger.debug('[%s] send message reqId: %s, route: %s, msg: %j, receivers: %j, opts: %j', this.app.serverId, reqId, route, msg, recvs, opts);
-        if (this.useAsyncCoder) {
-            return this.sendAsync(reqId, route, msg, recvs, opts, cb);
-        }
+        // if (this.useAsyncCoder) {
+        //     return this.sendAsync(reqId, route, msg, recvs, opts, cb);
+        // }
 
         let emsg = msg;
         if (this.encode) {
@@ -190,7 +197,7 @@ export class ConnectorComponent implements IComponent {
             recvs, opts, cb);
     }
 
-    setPubKey(id: number, key: {rsa_n: string , rsa_e: string}) {
+    setPubKey(id: number, key: { rsa_n: string, rsa_e: string }) {
         let pubKey = new rsa.Key();
         pubKey.n = new rsa.BigInteger(key.rsa_n, 16);
         pubKey.e = key.rsa_e;
@@ -265,7 +272,7 @@ export class ConnectorComponent implements IComponent {
         let session = this.getSession(socket);
         let closed = false;
 
-        socket.on('disconnect',  () => {
+        socket.on('disconnect', () => {
             if (closed) {
                 return;
             }
@@ -275,7 +282,7 @@ export class ConnectorComponent implements IComponent {
             }
         });
 
-        socket.on('error',  () => {
+        socket.on('error', () => {
             if (closed) {
                 return;
             }
@@ -286,11 +293,11 @@ export class ConnectorComponent implements IComponent {
         });
 
         // new message
-        socket.on('message',  (msg) => {
+        socket.on('message', (msg) => {
             let dmsg = msg;
-            if (this.useAsyncCoder) {
-                return this.handleMessageAsync(msg, session, socket);
-            }
+            // if (this.useAsyncCoder) {
+            //     return this.handleMessageAsync(msg, session, socket);
+            // }
 
             if (this.decode) {
                 dmsg = this.decode(msg);
@@ -381,7 +388,7 @@ export class ConnectorComponent implements IComponent {
         socket.on('disconnect', session.closed.bind(session));
         socket.on('error', session.closed.bind(session));
         session.on('closed', this.onSessionClose.bind(this, app));
-        session.on('bind',  (uid) => {
+        session.on('bind', (uid) => {
             logger.debug('session on [%s] bind with uid: %s', this.app.serverId, uid);
             // update connection statistics if necessary
             if (this.connection) {
@@ -394,7 +401,7 @@ export class ConnectorComponent implements IComponent {
             this.app.event.emit(events.BIND_SESSION, session);
         });
 
-        session.on('unbind',  (uid) => {
+        session.on('unbind', (uid) => {
             if (this.connection) {
                 this.connection.removeLoginedUser(uid);
             }
@@ -416,7 +423,14 @@ export class ConnectorComponent implements IComponent {
             logger.error('invalid route string. route : %j', msg.route);
             return;
         }
-        this.server.globalHandle(msg, session.toFrontendSession(),  (err, resp) => {
+        // only stop forwarding message when forwardMsg === false;
+        if (this.forwardMsg === false && type !== this.app.getServerType()) {
+            logger.warn('illegal route. forwardMsg=false route=', msg.route, 'sessionid=', session.id);
+            // kick client requests for illegal route request.
+            this.session.kickBySessionId(session.id);
+            return;
+        }
+        this.server.globalHandle(msg, session.toFrontendSession(), (err, resp) => {
             if (resp && !msg.id) {
                 logger.warn('try to response to a notify: %j', msg.route);
                 return;
@@ -431,7 +445,8 @@ export class ConnectorComponent implements IComponent {
             };
 
             this.send(msg.id, msg.route, resp, [session.id], opts,
-                function () { });
+                function () {
+                });
         });
     }
 
@@ -491,6 +506,7 @@ export class ConnectorComponent implements IComponent {
     }
 
 }
+
 let getConnector = function (app: Application, opts: any) {
     let connector = opts.connector;
     if (!connector) {

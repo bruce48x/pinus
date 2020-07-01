@@ -1,9 +1,9 @@
-import {pinus} from 'pinus';
-import "./app/servers/user.rpc.define"
+import { FrontendOrBackendSession, HandlerCallback, pinus, RESERVED, RouteRecord } from 'pinus';
+import './app/servers/user.rpc.define'
 import * as  routeUtil from './app/util/routeUtil';
-import {preload} from './preload';
+import { preload } from './preload';
 
-
+// TODO 需要整理。
 import _pinus = require('pinus');
 
 const filePath = (_pinus as any).FILEPATH;
@@ -43,6 +43,19 @@ app.configure('production|development', 'connector', function () {
             useDict: true,
             useProtobuf: true
         });
+
+    /**
+     // 缓存大小不够 日志示例
+     [2020-03-27T10:44:48.752] [ERROR] pinus - [chat-server-1 channelService.js] [pushMessage] fail to dispatch msg to serverId: connector-server-1, err:RangeError [ERR_OUT_OF_RANGE]: The value of "offset" is out of range. It must be >= 0 and <= 0. Received 1
+     at boundsError (internal/buffer.js:53:9)
+     at writeU_Int8 (internal/buffer.js:562:5)
+     at Buffer.writeUInt8 (internal/buffer.js:569:10)
+     at Encoder.writeBytes (F:\develop\gong4-server\logicServer\pinus\packages\pinus-protobuf\lib\encoder.ts:195:20)
+     */
+    app.set('protobufConfig', {
+        // protobuf Encoder 使用 5m 的缓存 需要保证每个消息不会超过指定的缓存大小，超过了就会抛出异常
+        encoderCacheSize: 5 * 1024 * 1024
+    });
 });
 
 app.configure('production|development', 'gate', function () {
@@ -53,8 +66,38 @@ app.configure('production|development', 'gate', function () {
         });
 });
 
+
+function errorHandler(err: Error, msg: any, resp: any,
+                      session: FrontendOrBackendSession, cb: HandlerCallback) {
+    console.error(`${ pinus.app.serverId } error handler msg[${ JSON.stringify(msg) }] ,resp[${ JSON.stringify(resp) }] ,
+    to resolve unknown exception: sessionId:${ JSON.stringify(session.export()) } ,
+     error stack: ${ err.stack }`);
+    if (!resp) {
+        resp = { code: 1003 };
+    }
+    cb(err, resp);
+}
+
+export function globalErrorHandler(err: Error, msg: any, resp: any,
+                                   session: FrontendOrBackendSession, cb: HandlerCallback) {
+    console.error(`${ pinus.app.serverId } globalErrorHandler msg[${ JSON.stringify(msg) }] ,resp[${ JSON.stringify(resp) }] ,
+    to resolve unknown exception: sessionId:${ JSON.stringify(session.export()) } ,
+     error stack: ${ err.stack }`);
+
+
+    if (cb) {
+        cb(err, resp ? resp : { code: 503 });
+    }
+}
+
 // app configure
 app.configure('production|development', function () {
+    app.set(RESERVED.ERROR_HANDLER, errorHandler);
+    app.set(RESERVED.GLOBAL_ERROR_HANDLER, globalErrorHandler);
+    app.globalAfter((err: Error, routeRecord: RouteRecord, msg: any, session: FrontendOrBackendSession, resp: any, cb: HandlerCallback) => {
+        console.log('global after ', err, routeRecord, msg)
+    })
+
     // route configures
     app.route('chat', routeUtil.chat);
 

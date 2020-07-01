@@ -1,12 +1,12 @@
 import * as countDownLatch from '../../util/countDownLatch';
 import * as utils from '../../util/utils';
-import {ChannelRemote} from '../remote/frontend/channelRemote';
-import {getLogger} from 'pinus-logger';
-import {Application} from '../../application';
-import {IComponent} from '../../interfaces/IComponent';
-import {IStore} from '../../interfaces/IStore';
-import {IHandlerFilter} from '../../interfaces/IHandlerFilter';
-import {FRONTENDID, UID, SID} from '../../util/constants';
+import { ChannelRemote } from '../remote/frontend/channelRemote';
+import { getLogger } from 'pinus-logger';
+import { Application } from '../../application';
+import { IComponent } from '../../interfaces/IComponent';
+import { IStore } from '../../interfaces/IStore';
+import { IHandlerFilter } from '../../interfaces/IHandlerFilter';
+import { FRONTENDID, UID, SID } from '../../util/constants';
 import * as path from 'path';
 
 let logger = getLogger('pinus', path.basename(__filename));
@@ -114,8 +114,9 @@ export class ChannelService implements IComponent {
      * @param {Function} cb cb(err)
      * @memberOf ChannelService
      */
-    pushMessageByUids(route: string, msg: any, uids: { uid: string, sid: string }[], cb ?: (err ?: Error, result ?: void) => void): void;
-    pushMessageByUids(route: string, msg: any, uids: { uid: string, sid: string }[], opts?: any, cb ?: (err ?: Error, result ?: void) => void) {
+    pushMessageByUids(route: string, msg: any, uids: { uid: string, sid: string }[], cb?: (err?: Error, result?: void) => void): void;
+    pushMessageByUids(route: string, msg: any, uids: { uid: string, sid: string }[], opts: any, cb?: (err?: Error, result?: void) => void): void;
+    pushMessageByUids(route: string, msg: any, uids: { uid: string, sid: string }[], opts?: any, cb?: (err?: Error, result?: void) => void) {
         if (typeof route !== 'string') {
             cb = opts;
             opts = uids;
@@ -130,7 +131,7 @@ export class ChannelService implements IComponent {
         }
 
         if (!uids || uids.length === 0) {
-            utils.invokeCallback(cb);
+            utils.invokeCallback(cb, new Error('uids should not be empty'));
             return;
         }
         let groups = {}, record;
@@ -154,8 +155,9 @@ export class ChannelService implements IComponent {
      * @param  {Function} cb         callback
      * @memberOf ChannelService
      */
-    broadcast(stype: string, route: string, msg: any, cb ?: (err ?: Error, result ?: void) => void): void;
-    broadcast(stype: string, route: string, msg: any, opts?: any, cb ?: (err ?: Error, result ?: void) => void) {
+    broadcast(stype: string, route: string, msg: any, cb?: (err?: Error, result?: void) => void): void;
+    broadcast(stype: string, route: string, msg: any, opts: any, cb?: (err?: Error, result?: void) => void): void;
+    broadcast(stype: string, route: string, msg: any, opts?: any, cb?: (err?: Error, result?: void) => void) {
         let app = this.app;
         let namespace = 'sys';
         let service = 'channelRemote';
@@ -194,7 +196,7 @@ export class ChannelService implements IComponent {
             };
         };
 
-        opts = {type: 'broadcast', userOptions: opts || {}};
+        opts = { type: 'broadcast', userOptions: opts || {} };
 
         // for compatiblity
         opts.isBroadcast = true;
@@ -262,7 +264,7 @@ export class Channel {
         } else {
             let res = add(uid, sid, this.groups);
             if (res) {
-                this.records[uid] = {sid: sid, uid: uid};
+                this.records[uid] = { sid: sid, uid: uid };
                 this.userAmount = this.userAmount + 1;
                 addToStore(this.__channelService__, genKey(this.__channelService__, this.name), genValue(sid, uid));
             }
@@ -475,7 +477,7 @@ let sendMessageByGroup = function (channelService: ChannelService, route: string
         };
     };
 
-    opts = {type: 'push', userOptions: opts || {}};
+    opts = { type: 'push', userOptions: opts || {} };
     // for compatiblity
     opts.isPush = true;
 
@@ -533,7 +535,7 @@ let restoreChannel = function (self: ChannelService, cb: Function) {
                                 let channel = self.channels[channelName];
                                 let res = add(uid, sid, channel.groups);
                                 if (res) {
-                                    channel.records[uid] = {sid: sid, uid: uid};
+                                    channel.records[uid] = { sid: sid, uid: uid };
                                 }
                             }
                         });

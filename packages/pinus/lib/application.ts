@@ -180,7 +180,7 @@ export class Application {
      */
     init(opts ?: ApplicationOptions) {
         opts = opts || {};
-        let base = opts.base || process.cwd();
+        let base = opts.base || path.dirname(require.main.filename);
         this.set(Constants.RESERVED.BASE, base);
         this.base = base;
 
@@ -529,7 +529,7 @@ export class Application {
                     if (err) {
                         utils.invokeCallback(cb, err);
                     } else {
-                        logger.info('%j enter after start...', self.getServerId());
+                        logger.info('%j enter start...', self.getServerId());
 
                         appUtil.optComponents(self.loaded, Constants.RESERVED.START, function (err) {
                             self.state = STATE_START;
@@ -574,10 +574,12 @@ export class Application {
             if (!err) {
                 logger.info('%j finish start', id);
             }
-            appUtil.optLifecycles(self.usedPlugins, Constants.LIFECYCLE.AFTER_STARTUP, self, cb);
-            let usedTime = Date.now() - self.startTime;
-            logger.info('%j startup in %s ms', id, usedTime);
-            self.event.emit(events.START_SERVER, id);
+            appUtil.optLifecycles(self.usedPlugins, Constants.LIFECYCLE.AFTER_STARTUP, self, function (err?: Error) {
+                let usedTime = Date.now() - self.startTime;
+                logger.info('%j startup in %s ms', id, usedTime);
+                self.event.emit(events.START_SERVER, id);
+                cb && cb(err);
+            });
         });
     }
 
@@ -1180,7 +1182,7 @@ export class Application {
         let eventInstance = new Event(opts);
 
         for (let evt in AppEvents) {
-            let name = AppEvents[evt];
+            let name = (AppEvents as any)[evt];
             let method = (eventInstance as any)[name];
             if (method) {
                 this.event.on(name, method.bind(eventInstance));

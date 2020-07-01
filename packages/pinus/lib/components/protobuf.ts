@@ -6,12 +6,29 @@ import * as crypto from 'crypto';
 import { getLogger } from 'pinus-logger';
 import { Application } from '../application';
 import { IComponent } from '../interfaces/IComponent';
+import AppEvents from '../util/events';
 
 let logger = getLogger('pinus', path.basename(__filename));
 
 export interface ProtobufComponentOptions {
     serverProtos?: string;
     clientProtos?: string;
+    /**
+     指定 pinus-protobuf encode使用 buffer缓存大小
+     使用方法  在 connector配置参数
+     app.set('protobufConfig', {
+        // protobuf Encoder 使用 5m 的缓存 需要保证每个消息不会超过指定的缓存大小，超过了就会抛出异常
+        encoderCacheSize: 5 * 1024 * 1024
+     });
+     如果缓存大小不够就会有错误日志
+     缓存大小不够 日志示例
+     [2020-03-27T10:44:48.752] [ERROR] pinus - [chat-server-1 channelService.js] [pushMessage] fail to dispatch msg to serverId: connector-server-1, err:RangeError [ERR_OUT_OF_RANGE]: The value of "offset" is out of range. It must be >= 0 and <= 0. Received 1
+     at boundsError (internal/buffer.js:53:9)
+     at writeU_Int8 (internal/buffer.js:562:5)
+     at Buffer.writeUInt8 (internal/buffer.js:569:10)
+     at Encoder.writeBytes (F:\develop\gong4-server\logicServer\pinus\packages\pinus-protobuf\lib\encoder.ts:195:20)
+     */
+    encoderCacheSize?: number;
 }
 
 
@@ -44,7 +61,7 @@ export class ProtobufComponent implements IComponent {
     constructor(app: Application, opts ?: ProtobufComponentOptions) {
         this.app = app;
         opts = opts || {};
-
+        logger.debug('ProtobufComponent options:', opts)
         let env = app.get(Constants.RESERVED.ENV);
         let originServerPath = path.join(app.getBase(), Constants.FILEPATH.SERVER_PROTOS);
         let presentServerPath = path.join(Constants.FILEPATH.CONFIG_DIR, env, path.basename(Constants.FILEPATH.SERVER_PROTOS));
@@ -57,7 +74,11 @@ export class ProtobufComponent implements IComponent {
         this.setProtos(Constants.RESERVED.SERVER, path.join(app.getBase(), this.serverProtosPath));
         this.setProtos(Constants.RESERVED.CLIENT, path.join(app.getBase(), this.clientProtosPath));
 
-        this.protobuf = new Protobuf({ encoderProtos: this.serverProtos, decoderProtos: this.clientProtos });
+        this.protobuf = new Protobuf({
+            encoderProtos: this.serverProtos,
+            decoderProtos: this.clientProtos,
+            encoderCacheSize: opts.encoderCacheSize
+        });
     }
 
 
@@ -132,7 +153,7 @@ export class ProtobufComponent implements IComponent {
         delete require.cache[path];
     }
 
-    onUpdate(type: string, path: string, event: string) {
+    onUpdate(type: string, path: string, event: string, filename?: string, errTry?: boolean) {
         if (event !== 'change') {
             return;
         }
@@ -141,6 +162,11 @@ export class ProtobufComponent implements IComponent {
         this.clearRequireCache(path);
         try {
             let protos = Protobuf.parse(require(path));
+            // 预防 git checkout这样的操作导致获得的数据为空的情况
+            if (!protos || !Object.keys(protos).length) {
+                // retry.
+                throw new Error('protos error');
+            }
             if (type === Constants.RESERVED.SERVER) {
                 this.protobuf.setEncoderProtos(protos);
                 self.serverProtos = protos;
@@ -152,12 +178,21 @@ export class ProtobufComponent implements IComponent {
             let protoStr = JSON.stringify(self.clientProtos) + JSON.stringify(self.serverProtos);
             self.version = crypto.createHash('md5').update(protoStr).digest('base64');
             logger.info('change proto file , type : %j, path : %j, version : %j', type, path, self.version);
-            this.watchers[type].close();
-            this.watchers[type] = fs.watch(path, this.onUpdate.bind(this, type, path));
+            // 抛出 proto 变化事件。
+            self.app.event.emit(AppEvents.PROTO_CHANGED, type);
         } catch (e) {
-            logger.warn('change proto file error! path : %j', path);
-            logger.warn(e);
+            logger.error('change proto file error! path : %j', path, filename, errTry, e);
+            if (!errTry) {
+                logger.warn('setTimeout,try update proto');
+                setTimeout(() => {
+                    logger.warn('try update proto again');
+                    this.onUpdate(type, path, event, filename, true);
+                }, 3000);
+            }
+
         }
+        this.watchers[type].close();
+        this.watchers[type] = fs.watch(path, this.onUpdate.bind(this, type, path));
     }
 
     stop(force: boolean, cb: () => void) {

@@ -207,7 +207,8 @@ export class WSClient {
     }
 
     private onKick(event) {
-        // this.emit(WSClient.EVENT_KICK,event);
+        event = JSON.parse(Protocol.strdecode(event));
+        this.emit(WSClient.EVENT_KICK, event);
     }
     private onData(data) {
         // probuff decode
@@ -897,7 +898,7 @@ interface IMessage {
 
     /**
      * decode
-     * @param buffer
+     * @param  buffer
      * @return Object
      */
     decode(buffer: egret.ByteArray): any;

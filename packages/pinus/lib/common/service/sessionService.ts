@@ -15,7 +15,7 @@ let ST_INITED = 0;
 let ST_CLOSED = 1;
 
 export interface SessionServiceOptions {
-    singleSession?: Session;
+    singleSession?: boolean;
 }
 
 /**
@@ -30,7 +30,7 @@ export interface SessionServiceOptions {
  * @constructor
  */
 export class SessionService {
-    singleSession: Session;
+    singleSession: boolean;
     sessions: { [sid: number]: Session };
     uidMap: { [uid: string]: Session[] };
 
@@ -666,11 +666,11 @@ export class FrontendSession extends EventEmitter implements ISession {
         return super.on(event, listener);
     }
 
-    abind(uid: string,) {
+    abind(uid: string, ) {
         return new Promise((resolve, reject) => this.bind(uid, (err, ret) => err ? reject(err) : resolve(ret as any)));
     }
 
-    aunbind(uid: string,) {
+    aunbind(uid: string, ) {
         return new Promise((resolve, reject) => this.unbind(uid, (err, ret) => err ? reject(err) : resolve(ret as any)));
     }
 
